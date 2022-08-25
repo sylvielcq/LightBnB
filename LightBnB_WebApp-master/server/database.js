@@ -166,10 +166,89 @@ exports.getAllReservations = getAllReservations;
 
 const getAllProperties = (options, limit = 10) => {
 
+  // Setup an array to hold any parameters that may be available for the query.
+  const queryParams = [];
+
+  // Start the query with all information that comes before the WHERE clause.
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  // Check if a city has been passed in as an option.
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    if (queryParams.length === 1) {
+      queryString += `WHERE city LIKE $${queryParams.length} `;
+    }
+    if (queryParams.length > 1) {
+      queryString += `AND city LIKE $${queryParams.length} `;
+    }
+  }
+
+  // Check if an owner_id has been passed in as an option.
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    if (queryParams.length === 1) {
+      queryString += `WHERE owner_id = $${queryParams.length}`;
+    }
+    if (queryParams.length > 1) {
+      queryString += `AND owner_id = $${queryParams.length}`;
+    }
+  }
+
+  // Check if a minimum_price_per_night has been passed in as an option.
+  if (options.minimum_price_per_night) {
+    queryParams.push(options.minimum_price_per_night*100);
+    if (queryParams.length === 1) {
+      queryString += `WHERE cost_per_night > $${queryParams.length}`;
+    }
+    if (queryParams.length > 1) {
+      queryString += `AND cost_per_night > $${queryParams.length}`;
+    }
+  }
+
+  // Check if a maximum_price_per_night has been passed in as an option.
+  if (options.maximum_price_per_night) {
+    queryParams.push(options.maximum_price_per_night*100);
+    if (queryParams.length === 1) {
+      queryString += `WHERE cost_per_night < $${queryParams.length}`;
+    }
+    if (queryParams.length > 1) {
+      queryString += `AND cost_per_night < $${queryParams.length}`;
+    }
+  }
+
+  // Check if a minimum_rating has been passed in as an option.
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += ` 
+    GROUP BY properties.id
+    HAVING avg(property_reviews.rating) >= $${queryParams.length}`;
+    queryParams.push(limit);
+    queryString += `
+    LIMIT $${queryParams.length};
+    `;
+  }
+
+  // If no minimum_rating was passed in as an option, add query that comes after the WHERE clause.
+  if (!options.minimum_rating) {
+    queryParams.push(limit);
+    queryString += `
+    GROUP BY properties.id
+    ORDER BY cost_per_night
+    LIMIT $${queryParams.length};
+    `;
+  }
+
+  // Console log everything just to make sure we've done it right.
+  console.log(queryString, queryParams);
+
+  // Run the query
   return pool
-    .query(`SELECT * FROM properties LIMIT $1;`,[limit])
+    .query(queryString, queryParams)
     .then((result) => {
-      console.log(result.rows);
       return result.rows;
     })
     .catch((err) => {
